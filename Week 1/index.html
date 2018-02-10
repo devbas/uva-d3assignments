@@ -1,0 +1,152 @@
+<html>
+<head>
+  <link href="https://fonts.googleapis.com/css?family=Nunito:300,400,700" rel="stylesheet">
+  <style>
+    body {
+      text-align: center;
+      font-family: 'Open Sans', sans-serif;
+    }
+
+    .bar {
+      fill: steelblue;
+    }
+
+    .bar:hover {
+      fill: brown;
+    }
+
+    .svg-box {
+      margin: 50px auto 0 auto
+    }
+  </style>
+</head>
+<body>
+
+  <h1></h1>
+
+  <svg width="960" height="500" class="svg-box"></svg>
+  <form>
+    <input name="prev" id="prev-year" value="Previous year" onclick="updateData(this)" type="button" disabled/>
+    <input name="next" id="next-year" value="Next year" onclick="updateData(this)" type="button"/>
+    <input type="hidden" id="year-min" value="2011"/>
+    <input type="hidden" id="year-range" value="4"/>
+    <input type="hidden" id="year-offset" value="0"/>
+  </form>
+
+  <script src="./utils/d3.min.js"></script>
+  <script>
+
+    let svg = d3.select("svg"),
+      margin = {top: 20, right: 20, bottom: 30, left: 40},
+      width = +svg.attr("width") - margin.left - margin.right,
+      height = +svg.attr("height") - margin.top - margin.bottom;
+
+    let x = d3.scaleBand().rangeRound([0, width]).padding(0.1);
+    let y = d3.scaleLinear().rangeRound([height, 0]);
+
+    let g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+    const formatNumber = d3.format('.1f')
+
+    loadCsv = (resolve, reject) => {
+      d3.csv('./meteo.csv', (data) => {
+        const graphData = d3.nest().key((item) => item.year
+          ).key((yearItem) => yearItem.month
+          ).rollup((monthItem) => {
+            return {...monthItem, avgTemperature: formatNumber(d3.mean(monthItem, day => +day.temperature / 10)) }
+          }).entries(data);
+        
+        return resolve(graphData)
+      })
+    }
+    
+
+
+    barChart = (activeYearIndex, data) => {
+      if(!activeYearIndex) activeYearIndex = 0
+      data = data[activeYearIndex]
+
+      d3.selectAll('h1').text(data.key)
+      const formatMonth = d3.timeFormat('%b')
+
+      x.domain(data.values.map(month => formatMonth(new Date(data.key, month.key -1, 1)) ))
+      y.domain([0, d3.max(data.values, data => parseInt(data.value.avgTemperature) )]); // Parse avgTemperatura float to integer again for correct measurement in D3
+
+      g.selectAll('.axis--x').remove()
+      g.append("g")
+        .attr("class", "axis axis--x")
+        .attr("transform", "translate(0," + height + ")")
+        .call(d3.axisBottom(x))
+
+      g.selectAll('.axis--y').remove()
+      g.append("g")
+          .attr("class", "axis axis--y")
+          .call(d3.axisLeft(y).ticks(10))
+        .append("text")
+          .attr("transform", "rotate(-90)")
+          .attr("y", 0)
+          .attr("dy", "0.71em")
+          .attr("text-anchor", "end")
+          .text("Frequency");
+
+      const bars = g.selectAll('.bar-box').remove().exit().data(data.values)
+
+      let pillar = bars.enter()
+        .append('g')
+          .attr('transform', item => { 
+            const formattedMonth = formatMonth(new Date(data.key, item.key -1, 1))
+            return `translate(${x(formattedMonth)},${y(item.value.avgTemperature)})`
+          })
+          .attr('width', x.bandwidth())
+          .attr('class', 'bar-box')
+
+      pillar.append('rect')
+        .attr('class', 'bar')
+        .attr('width', x.bandwidth())
+        .attr('height', item => height - y(item.value.avgTemperature))
+
+      pillar.append('text')
+        .text(item => item.value.avgTemperature)
+        .attr('text-anchor', 'middle')
+        .attr('width', x.bandwidth())
+        .attr('y', 30)
+        .attr('x', x.bandwidth() / 2)
+    }
+
+    // On Next/Previous year click
+    updateData = (e) => {
+      const yearMin = parseInt(document.getElementById('year-min').value)
+      const yearRange = parseInt(document.getElementById('year-range').value)
+      const yearOffset = document.getElementById('year-offset')
+      const yearCurrent = parseInt(yearMin) + yearOffset
+
+      if(e.name === 'next') {
+        yearOffset.value = parseInt(yearOffset.value) + 1
+      }
+
+      if(e.name === 'prev') {
+        yearOffset.value = parseInt(yearOffset.value) - 1
+      }
+
+      if(yearOffset.value <= 0) {
+        document.getElementById('prev-year').disabled = true   
+      } else {
+        document.getElementById('prev-year').disabled = false
+      }
+
+      if(yearOffset.value >= 4) {
+        document.getElementById('next-year').disabled = true
+      } else {
+        document.getElementById('next-year').disabled = false
+      }
+
+      new Promise(loadCsv).then(barChart.bind(null, yearOffset.value))
+
+    }
+
+    // Initiate the page
+    let pageInit = new Promise(loadCsv).then(barChart.bind(null, 0))
+
+  </script>
+
+</body>
+</html>
